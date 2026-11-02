@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { broadcasterGamePath, buildRoleRevealUrl, canonicalLoopbackRedirect, consumeOAuthState, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, isSameOriginApplicationRequest, resolveOAuthRedirectUri } from './web-flow.mjs';
+import { broadcasterGamePath, buildRoleRevealUrl, canonicalLoopbackRedirect, consumeOAuthState, createHostSessionCookie, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, isSameOriginApplicationRequest, resolveOAuthRedirectUri } from './web-flow.mjs';
 
 test('Lineup OAuth always targets Twitch authorization with its configured callback and scopes', () => {
   const url = createTwitchAuthorizationUrl({
@@ -21,6 +21,14 @@ test('Lineup OAuth always targets Twitch authorization with its configured callb
 test('successful broadcaster sign-in resolves to a stable ID-specific game route', () => {
   assert.equal(broadcasterGamePath('123456'), '/game/123456');
   assert.throws(() => broadcasterGamePath('not-a-twitch-id'), /valid Twitch broadcaster ID/);
+});
+
+test('OAuth host session cookie survives the Twitch top-level callback redirect', () => {
+  const id = 'a'.repeat(64);
+  assert.equal(createHostSessionCookie(id, 28800, true), `lineup_host_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800; Secure`);
+  assert.equal(createHostSessionCookie(id, 28800, false), `lineup_host_session=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800`);
+  assert.throws(() => createHostSessionCookie('bad', 28800), /valid host session ID/);
+  assert.throws(() => createHostSessionCookie(id, 0), /positive host session lifetime/);
 });
 
 test('local hostname mismatch is normalized but production and canonical requests are untouched', () => {

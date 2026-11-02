@@ -7,7 +7,7 @@ import { assessBroadcasterChatToken } from './twitch-auth.mjs';
 import { renderRolePage, rolePageStatus } from './role-page.mjs';
 import { dashboardPage } from './dashboard-page.mjs';
 import { isPublicHttpsOrigin } from './chat-announcements.mjs';
-import { broadcasterGamePath, buildRoleRevealUrl, canonicalLoopbackRedirect, consumeOAuthState, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, isSameOriginApplicationRequest, resolveOAuthRedirectUri } from './web-flow.mjs';
+import { broadcasterGamePath, buildRoleRevealUrl, canonicalLoopbackRedirect, consumeOAuthState, createHostSessionCookie, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, isSameOriginApplicationRequest, resolveOAuthRedirectUri } from './web-flow.mjs';
 
 const PORT = Number(process.env.PORT || 3000);
 const CLIENT_ID = process.env.TWITCH_CLIENT_ID?.trim();
@@ -309,7 +309,7 @@ const server = http.createServer(async (request, response) => {
       connectEventSub(session);
       const sessionId = randomBytes(32).toString('hex');
       hostSessions.set(sessionId, { userId: identity.user_id, broadcasterId: identity.user_id, expiresAt: Date.now() + HOST_SESSION_TTL_MS });
-      response.writeHead(303, { Location: broadcasterGamePath(identity.user_id), 'Cache-Control': 'no-store', 'Set-Cookie': [clearStateCookie, `lineup_host_session=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${HOST_SESSION_TTL_MS / 1000}${SECURE_COOKIE}`] });
+      response.writeHead(303, { Location: broadcasterGamePath(identity.user_id), 'Cache-Control': 'no-store', 'Set-Cookie': [clearStateCookie, createHostSessionCookie(sessionId, HOST_SESSION_TTL_MS / 1000, NODE_ENV === 'production')] });
       response.end();
     })().catch(() => sendOAuthFailure(response, 502, 'Twitch sign-in failed while contacting Twitch. Check connectivity, the registered callback URL, and app credentials, then retry. ', clearStateCookie));
     return;

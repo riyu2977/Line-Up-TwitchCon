@@ -43,6 +43,12 @@ export function broadcasterGamePath(userId) {
   return `/game/${encodeURIComponent(userId)}`;
 }
 
+export function createHostSessionCookie(sessionId, maxAgeSeconds, secure = false) {
+  if (typeof sessionId !== 'string' || !/^[a-f0-9]{64}$/.test(sessionId)) throw new TypeError('A valid host session ID is required.');
+  if (!Number.isInteger(maxAgeSeconds) || maxAgeSeconds <= 0) throw new TypeError('A positive host session lifetime is required.');
+  return `lineup_host_session=${sessionId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`;
+}
+
 export function resolveOAuthRedirectUri({ nodeEnv, configuredRedirectUri, publicOrigin, port }) {
   const redirectUri = configuredRedirectUri || (nodeEnv === 'production' && publicOrigin
     ? `${publicOrigin}/host/callback`
