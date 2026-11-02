@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Lineup
 
 Lineup is a Twitch chat drawing and social deduction game. Viewers join during
@@ -119,3 +120,7 @@ Automated tests cover game geometry, line ownership, lifecycle, role allocation,
 guessing, secret isolation, chat reply payloads, direct HTTPS announcement
 URLs, duplicate announcement suppression, and missing public URL behavior.
 They do not verify a live Twitch send, EventSub session, OAuth callback, two simultaneously authorized broadcasters, or production deployment.
+=======
+# chat-to-decision-TwitchCon
+An AI-powered Twitch tool that turns live chat discussions into evidence-backed polls, allowing streamers to review, edit, and approve polls before their communities vote.
+>>>>>>> origin/main
