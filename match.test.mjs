@@ -36,6 +36,20 @@ test('fixed anonymous role pool contains a shuffled 70/30 allocation and consume
   }
 });
 
+test('role draw order is randomized while the fixed 10-player allocation remains 7 to 3', () => {
+  const readOrder = (random) => {
+    const pool = createRoleAllocation(10, random);
+    return Array.from({ length: 10 }, () => pool.draw().role);
+  };
+  const orderA = readOrder(() => 0);
+  const orderB = readOrder(() => 0.99);
+  assert.notDeepEqual(orderA, orderB);
+  for (const order of [orderA, orderB]) {
+    assert.equal(order.filter((role) => role === 'builder').length, 7);
+    assert.equal(order.filter((role) => role === 'saboteur').length, 3);
+  }
+});
+
 test('shared role draw requires an active round and has no player identity mapping', () => {
   const lines = []; const game = makeGame(lines); addPlayers(lines);
   assert.equal(game.drawRole().status, 'invalid-phase');
@@ -47,16 +61,44 @@ test('shared role draw requires an active round and has no player identity mappi
   assert.equal(game.drawRole().status, 'exhausted');
 });
 
+test('a browser can consume only one role slot per round and sees its same assignment again', () => {
+  const lines = []; const game = makeGame(lines); addPlayers(lines, ['a', 'b', 'c']);
+  game.startRound('broadcaster', 'broadcaster');
+  const first = game.drawRole('browser-cookie-a');
+  const repeat = game.drawRole('browser-cookie-a');
+  const secondBrowser = game.drawRole('browser-cookie-b');
+  assert.equal(first.status, 'assigned');
+  assert.equal(repeat.status, 'already-assigned');
+  assert.equal(repeat.role, first.role);
+  assert.equal(repeat.targetWord, first.targetWord);
+  assert.equal(secondBrowser.status, 'assigned');
+  assert.notEqual(secondBrowser.role, first.role);
+  assert.equal(game.drawRole().status, 'assigned');
+  assert.equal(game.drawRole().status, 'exhausted');
+});
+
+test('simultaneous browser draws consume distinct available slots and cannot over-allocate', async () => {
+  const lines = []; const game = makeGame(lines);
+  addPlayers(lines, Array.from({ length: 10 }, (_, index) => `viewer-${index}`));
+  game.startRound('broadcaster', 'broadcaster');
+  const results = await Promise.all(Array.from({ length: 11 }, (_, index) =>
+    Promise.resolve().then(() => game.drawRole(`browser-${index}`))));
+  assert.equal(results.filter((result) => result.status === 'assigned').length, 10);
+  assert.equal(results.filter((result) => result.status === 'exhausted').length, 1);
+  assert.equal(results.filter((result) => result.role === 'builder').length, 7);
+  assert.equal(results.filter((result) => result.role === 'saboteur').length, 3);
+});
+
 test('role slots are discarded when the round ends and regenerated for the next round', () => {
   const lines = []; const game = makeGame(lines); addPlayers(lines);
   game.startRound('broadcaster', 'broadcaster');
-  assert.equal(game.drawRole().status, 'assigned');
+  assert.equal(game.drawRole('persistent-browser').status, 'assigned');
   const target = game.drawRole().targetWord;
   assert.equal(game.submitGuess('broadcaster', 'broadcaster', target).status, 'correct');
   assert.equal(game.drawRole().status, 'invalid-phase');
   game.nextRound('broadcaster', 'broadcaster');
   assert.equal(game.startRound('broadcaster', 'broadcaster').status, 'started');
-  assert.equal(game.drawRole().status, 'assigned');
+  assert.equal(game.drawRole('persistent-browser').status, 'assigned');
 });
 
 test('guess normalization and round resolution work without exposing the answer during active play', () => {
@@ -73,7 +115,8 @@ test('guess normalization and round resolution work without exposing the answer 
   assert.equal(game.submitGuess('broadcaster', 'broadcaster', 'banana').status, 'incorrect');
   assert.equal(game.submitGuess('broadcaster', 'broadcaster', ` ${role.targetWord.toUpperCase()} `).status, 'correct');
   const ended = game.getPublicState({ width: 100, height: 100, lines });
-  assert.equal(ended.result.answer, role.targetWord);
+  assert.equal('answer' in ended.result, false);
+  assert.equal(JSON.stringify(ended).includes(role.targetWord), false);
   assert.equal('leaderboard' in ended, false);
 });
 
@@ -85,7 +128,9 @@ test('timeout ends for Saboteurs; public result reveals answer only after end', 
   assert.equal(JSON.stringify(game.getPublicState({ width: 100, height: 100, lines })).includes(target), false);
   clock.advance(1000);
   const ended = game.getPublicState({ width: 100, height: 100, lines });
-  assert.equal(ended.result.winner, 'saboteurs'); assert.equal(ended.result.answer, target);
+  assert.equal(ended.result.winner, 'saboteurs');
+  assert.equal('answer' in ended.result, false);
+  assert.equal(JSON.stringify(ended).includes(target), false);
 });
 
 test('broadcaster can end a round without awarding a team and the timer stops', () => {
@@ -98,6 +143,7 @@ test('broadcaster can end a round without awarding a team and the timer stops', 
   assert.equal(ended.status, 'ended');
   assert.equal(ended.result.reason, 'broadcaster-ended');
   assert.equal(ended.result.winner, null);
+  assert.equal('answer' in ended.result, false);
   assert.equal(game.lifecycle.getPhase(), 'ended');
   assert.equal(clock.timers.size, 0);
   assert.equal(game.getPublicState({ width: 100, height: 100, lines }).result.winner, null);

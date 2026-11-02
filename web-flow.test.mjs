@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { broadcasterGamePath, canonicalLoopbackRedirect, consumeOAuthState, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, resolveOAuthRedirectUri } from './web-flow.mjs';
+import { broadcasterGamePath, buildRoleRevealUrl, canonicalLoopbackRedirect, consumeOAuthState, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, isSameOriginApplicationRequest, resolveOAuthRedirectUri } from './web-flow.mjs';
 
 test('Lineup OAuth always targets Twitch authorization with its configured callback and scopes', () => {
   const url = createTwitchAuthorizationUrl({
@@ -27,6 +27,21 @@ test('local hostname mismatch is normalized but production and canonical request
   assert.equal(canonicalLoopbackRedirect(request), 'http://localhost:3000/host/login?next=1');
   assert.equal(canonicalLoopbackRedirect({ ...request, requestHost: 'localhost:3000' }), null);
   assert.equal(canonicalLoopbackRedirect({ ...request, nodeEnv: 'production' }), null);
+});
+
+test('same-origin mutations validate loopback locally and configured HTTPS origin in production', () => {
+  assert.equal(isSameOriginApplicationRequest({ nodeEnv: 'development', requestHost: 'localhost:3000', requestOrigin: 'http://localhost:3000', developmentOrigin: 'http://localhost:3000' }), true);
+  assert.equal(isSameOriginApplicationRequest({ nodeEnv: 'development', requestHost: '127.0.0.1:3000', requestOrigin: 'http://127.0.0.1:3000', developmentOrigin: 'http://localhost:3000' }), false);
+  assert.equal(isSameOriginApplicationRequest({ nodeEnv: 'production', requestHost: 'lineup.example', requestOrigin: 'https://lineup.example', developmentOrigin: 'http://localhost:3000', publicOrigin: 'https://lineup.example' }), true);
+  assert.equal(isSameOriginApplicationRequest({ nodeEnv: 'production', requestHost: 'evil.example', requestOrigin: 'https://lineup.example', publicOrigin: 'https://lineup.example' }), false);
+  assert.equal(isSameOriginApplicationRequest({ nodeEnv: 'production', requestHost: 'lineup.example', requestOrigin: 'https://evil.example', publicOrigin: 'https://lineup.example' }), false);
+});
+
+test('role links use local origin only for local testing and require public HTTPS in production', () => {
+  assert.equal(buildRoleRevealUrl({ nodeEnv: 'development', rolePath: '/role/abc', localOrigin: 'http://localhost:3000' }), 'http://localhost:3000/role/abc');
+  assert.equal(buildRoleRevealUrl({ nodeEnv: 'production', rolePath: '/role/abc', publicOrigin: 'https://lineup.example' }), 'https://lineup.example/role/abc');
+  assert.equal(buildRoleRevealUrl({ nodeEnv: 'production', rolePath: '/role/abc', localOrigin: 'http://localhost:3000' }), null);
+  assert.equal(buildRoleRevealUrl({ nodeEnv: 'production', rolePath: '/role/abc', publicOrigin: 'http://localhost:3000' }), null);
 });
 
 test('development OAuth cannot be redirected to a third-party callback', () => {

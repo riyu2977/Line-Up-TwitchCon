@@ -17,10 +17,12 @@ Copy `.env.example` to `.env` and configure. `TWITCH_CLIENT_SECRET` is required 
 - `TWITCH_ACCESS_TOKEN` and `TWITCH_BROADCASTER_ID`: optional legacy bootstrap for one locally configured channel. For normal multi-streamer use, each broadcaster connects through Twitch OAuth and the resulting token stays server-side in memory.
 - `TWITCH_HOST_REDIRECT_URI`: registered callback. For production, set it to
   `PUBLIC_APP_URL/host/callback`.
-- `PUBLIC_APP_URL`: optional bare HTTPS origin, such as
-  `https://lineup.example`. When set, a round start posts the direct
+- `PUBLIC_APP_URL`: optional bare HTTPS origin for deployment, such as
+  `https://lineup-demo.com`. When set, a round start posts the absolute
   `/role/<unpredictable-token>` URL to chat. If it is absent, Lineup does not
-  post a link and never substitutes localhost.
+  post a link and never substitutes localhost. During local development, an
+  authenticated host page shows a localhost role-page link for testing only;
+  it is never sent to Twitch.
 - `PORT`: optional local or hosting-provider port; defaults to 3000.
 
 Keep `.env` private. It is ignored by Git. Tokens remain server-side.
@@ -64,19 +66,29 @@ failures do not undo the join and are reported in the local chat activity list.
 Starting a round picks a word, shuffles the role slots, and starts a three
 minute timer. The pool is approximately 70% Builders and 30% Saboteurs. The
 host submits guesses in the host controls. A correct guess wins for Builders;
-timeout wins for Saboteurs. The word and result appear after the round. The
-host can open another round with the same roster or start a fresh match.
+timeout wins for Saboteurs. Round results expose the winner and reason; the
+target word remains confined to a successful role-page draw. The host can open
+another round with the same roster or start a fresh match.
 
 When both `PUBLIC_APP_URL` and `user:write:chat` are configured, starting a
 round posts the direct shared role page URL to Twitch chat. The link has a
-random token and opens the existing **Get My Role** page. One draw consumes one
-preallocated role slot and shows that role and the target word. The allocation
-is anonymous and does not track which Twitch viewer drew which role. Anyone
-with the link can consume a slot; it is not identity-verified private delivery.
+random token and opens the **Role Assignment** page. Its purple, responsive
+LEGO-inspired frame presents **Get My Role** before showing the allocated role
+and current round word. The server assigns from the pre-shuffled 70:30 pool,
+including exactly 7 Builders and 3 Saboteurs for 10 players. An HttpOnly
+anonymous browser cookie prevents that browser from consuming another slot in
+the same round; refreshing returns that browser's original assignment. This
+does not verify Twitch identity: someone with the shared link can use another
+browser or clear browser data to draw again. The app never claims that the
+shared link is identity-verified private delivery.
 `PUBLIC_APP_URL` must be the externally reachable HTTPS origin viewers use;
-Lineup rejects localhost and loopback URLs. Without it, the round still starts,
-but the dashboard reports that the announcement was blocked and why. A round
-announcement is marked sent only when Twitch confirms submission.
+Lineup rejects localhost and loopback URLs. For production, set both
+`PUBLIC_APP_URL=https://<your-deployed-host>` and
+`TWITCH_HOST_REDIRECT_URI=https://<your-deployed-host>/host/callback`, then
+register that exact callback URL in the Twitch Developer Console. Do not use
+the token generator as the callback. Without a public URL, the round still
+starts, but the dashboard reports that the announcement was blocked and why.
+A round announcement is marked sent only when Twitch confirms submission.
 
 The broadcaster controls can end an active round without awarding either team,
 open the next-round lobby with the same roster, or end the match and clear its

@@ -5,7 +5,7 @@ import { createStreamerSession } from './streamer-session.mjs';
 function session(id) {
   return createStreamerSession({
     broadcasterId: id, accessToken: `secret-${id}`, clientId: 'client',
-    publicAppUrl: 'https://lineup.example', rolePath: `/role/${id}`,
+    publicAppUrl: 'https://lineup-demo.com', rolePath: `/role/${id}`,
   });
 }
 
@@ -70,8 +70,8 @@ test('each session sends join replies only with its own broadcaster token and ID
     requests.push({ url, options });
     return { ok: true, json: async () => ({ data: [{ is_sent: true }] }) };
   };
-  const a = createStreamerSession({ broadcasterId: 'broadcaster-x', accessToken: 'private-x', clientId: 'client', publicAppUrl: 'https://lineup.example', rolePath: '/role/x', fetchImpl });
-  const b = createStreamerSession({ broadcasterId: 'broadcaster-y', accessToken: 'private-y', clientId: 'client', publicAppUrl: 'https://lineup.example', rolePath: '/role/y', fetchImpl });
+  const a = createStreamerSession({ broadcasterId: 'broadcaster-x', accessToken: 'private-x', clientId: 'client', publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/x', fetchImpl });
+  const b = createStreamerSession({ broadcasterId: 'broadcaster-y', accessToken: 'private-y', clientId: 'client', publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/y', fetchImpl });
   for (const s of [a, b]) s.validateTokenMetadata({ client_id: 'client', user_id: s.broadcasterId, scopes: ['user:read:chat', 'user:write:chat'] });
   await a.handleChatNotification(chat('broadcaster-x', 'join-x', 'viewer-x', '!join'));
   await b.handleChatNotification(chat('broadcaster-y', 'join-y', 'viewer-y', '!join'));
@@ -93,7 +93,7 @@ test('an OAuth session refreshes and rotates credentials without exposing them i
     if (url.endsWith('/token')) return { ok: true, json: async () => ({ access_token: 'rotated-access', refresh_token: 'rotated-refresh' }) };
     return { ok: true, json: async () => ({ client_id: 'client', user_id: 'broadcaster-r', scopes: ['user:read:chat', 'user:write:chat'] }) };
   };
-  const s = createStreamerSession({ broadcasterId: 'broadcaster-r', accessToken: 'expired-access', refreshToken: 'original-refresh', clientId: 'client', clientSecret: 'private-client-secret', publicAppUrl: 'https://lineup.example', rolePath: '/role/r', fetchImpl });
+  const s = createStreamerSession({ broadcasterId: 'broadcaster-r', accessToken: 'expired-access', refreshToken: 'original-refresh', clientId: 'client', clientSecret: 'private-client-secret', publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/r', fetchImpl });
   await s.refreshAuthorization();
   assert.equal(requests[0].options.body.get('refresh_token'), 'original-refresh');
   assert.equal(requests[1].options.headers.Authorization, 'Bearer rotated-access');
@@ -125,7 +125,7 @@ test('round start announcement uses the current round link once and records send
   const requests = [];
   const s = createStreamerSession({
     broadcasterId: 'broadcaster-announce', accessToken: 'private-token', clientId: 'client',
-    publicAppUrl: 'https://lineup.example', rolePath: '/role/session-link',
+    publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/session-link',
     fetchImpl: async (url, options) => {
       requests.push({ url, options });
       return { ok: true, json: async () => ({ data: [{ is_sent: true }] }) };
@@ -133,16 +133,29 @@ test('round start announcement uses the current round link once and records send
   });
   s.validateTokenMetadata({ client_id: 'client', user_id: s.broadcasterId, scopes: ['user:read:chat', 'user:write:chat'] });
   s.match.joinPlayer('viewer-one'); s.match.joinPlayer('viewer-two');
-  const started = s.match.startRound(s.broadcasterId, s.broadcasterId);
-  const announcement = await s.announceRound(started.roundNumber);
+  const startAndAnnounce = async () => {
+    const started = s.match.startRound(s.broadcasterId, s.broadcasterId);
+    return started.status === 'started' ? { ...started, announcement: await s.announceRound(started.roundNumber) } : started;
+  };
+  const started = await startAndAnnounce();
+  const announcement = started.announcement;
+  const duplicateStart = await startAndAnnounce();
   const targetWord = s.match.drawRole().targetWord;
   const repeated = await s.announceRound(started.roundNumber);
   assert.equal(announcement.status, 'sent');
+  assert.equal(duplicateStart.status, 'invalid-phase');
   assert.equal(repeated.status, 'already-sent');
   assert.equal(requests.length, 1);
   const message = JSON.parse(requests[0].options.body).message;
-  assert.match(message, /https:\/\/lineup\.example\/role\/session-link/);
+  const requestBody = JSON.parse(requests[0].options.body);
+  assert.match(message, /https:\/\/lineup-demo\.com\/role\/session-link/);
+  assert.match(message, /Open this link and click Get My Role/);
   assert.ok(!message.toLowerCase().includes(targetWord));
+  assert.doesNotMatch(message, /\bBuilder\b|\bSaboteur\b/i);
+  assert.equal(requestBody.broadcaster_id, s.broadcasterId);
+  assert.equal(requestBody.sender_id, s.broadcasterId);
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer private-token');
+  assert.equal(requests[0].options.headers['Client-Id'], 'client');
   assert.equal(s.getState().roundAnnouncement.status, 'already-sent');
   assert.ok(s.getState().messages.some((item) => item.activity === 'success'));
   s.stop();
@@ -157,9 +170,16 @@ test('announcement blockers and Twitch send failures remain explicit and are nev
   assert.equal(noUrl.getState().roundAnnouncement.detail.includes('PUBLIC_APP_URL'), true);
   noUrl.stop();
 
+  const noUrlNoWrite = createStreamerSession({ broadcasterId: 'broadcaster-no-url-no-write', accessToken: 'token', clientId: 'client', rolePath: '/role/no-url-no-write' });
+  noUrlNoWrite.validateTokenMetadata({ client_id: 'client', user_id: noUrlNoWrite.broadcasterId, scopes: ['user:read:chat'] });
+  noUrlNoWrite.match.joinPlayer('one'); noUrlNoWrite.match.joinPlayer('two');
+  const noUrlRound = noUrlNoWrite.match.startRound(noUrlNoWrite.broadcasterId, noUrlNoWrite.broadcasterId);
+  assert.equal((await noUrlNoWrite.announceRound(noUrlRound.roundNumber)).status, 'missing-public-url');
+  noUrlNoWrite.stop();
+
   const failed = createStreamerSession({
     broadcasterId: 'broadcaster-send-fail', accessToken: 'token', clientId: 'client',
-    publicAppUrl: 'https://lineup.example', rolePath: '/role/fail',
+    publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/fail',
     fetchImpl: async () => ({ ok: false, status: 503 }),
   });
   failed.validateTokenMetadata({ client_id: 'client', user_id: failed.broadcasterId, scopes: ['user:read:chat', 'user:write:chat'] });

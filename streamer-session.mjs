@@ -4,7 +4,7 @@ import { createMessageDeduplicator, DEFAULT_ROUND_DURATION_MS } from './round.mj
 import { createMatchGame } from './match.mjs';
 import { createTwitchChatSender } from './twitch-chat.mjs';
 import { createRoundAnnouncer } from './chat-announcements.mjs';
-import { assessBroadcasterChatToken, CHAT_WRITE_SCOPE } from './twitch-auth.mjs';
+import { assessBroadcasterChatToken } from './twitch-auth.mjs';
 
 const MAX_MESSAGES = 100;
 
@@ -185,18 +185,7 @@ export function createStreamerSession({
   }
 
   async function announceRound(roundNumber) {
-    if (!chatWriteEnabled) {
-      const authorization = outgoingChat.authorization;
-      const status = authorization === 'missing-write-scope' ? 'missing-scope'
-        : authorization === 'invalid-token' ? 'invalid-token'
-          : authorization === 'sender-not-permitted' || authorization === 'broadcaster-mismatch' ? 'forbidden'
-            : 'authorization-error';
-      lastRoundAnnouncement = { roundNumber, status, detail: authorization === 'missing-write-scope'
-        ? `Token needs ${CHAT_WRITE_SCOPE}. Reconnect Lineup and approve chat sending.`
-        : `Round link was not sent because Twitch authorization is ${authorization}. Reconnect this broadcaster through Lineup.` };
-    } else {
-      lastRoundAnnouncement = { roundNumber, ...(await announcer.announce(match.getPublicState(game).matchNumber, roundNumber)) };
-    }
+    lastRoundAnnouncement = { roundNumber, ...(await announcer.announce(match.getPublicState(game).matchNumber, roundNumber)) };
     recordOutgoingResult(lastRoundAnnouncement);
     const activityText = lastRoundAnnouncement.status === 'sent' || lastRoundAnnouncement.status === 'already-sent'
       ? 'Round role-reveal link sent to Twitch chat.'

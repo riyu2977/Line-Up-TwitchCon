@@ -4,7 +4,9 @@ import { DEFAULT_ROUND_DURATION_MS } from './round.mjs';
 import { createStreamerSession } from './streamer-session.mjs';
 import { getHostActionIdentity, invalidateHostSession } from './host-auth.mjs';
 import { assessBroadcasterChatToken } from './twitch-auth.mjs';
-import { broadcasterGamePath, canonicalLoopbackRedirect, consumeOAuthState, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, resolveOAuthRedirectUri } from './web-flow.mjs';
+import { renderRolePage, rolePageStatus } from './role-page.mjs';
+import { isPublicHttpsOrigin } from './chat-announcements.mjs';
+import { broadcasterGamePath, buildRoleRevealUrl, canonicalLoopbackRedirect, consumeOAuthState, createTwitchAuthorizationUrl, exchangeAndValidateOAuthCode, isSameOriginApplicationRequest, resolveOAuthRedirectUri } from './web-flow.mjs';
 
 const PORT = Number(process.env.PORT || 3000);
 const CLIENT_ID = process.env.TWITCH_CLIENT_ID?.trim();
@@ -14,10 +16,7 @@ const CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET?.trim();
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL?.trim().replace(/\/$/, '');
 const ROUND_DURATION_MS = DEFAULT_ROUND_DURATION_MS;
-const publicOrigin = PUBLIC_APP_URL ? new URL(PUBLIC_APP_URL) : null;
-if (publicOrigin && (publicOrigin.protocol !== 'https:' || publicOrigin.username || publicOrigin.password || publicOrigin.pathname !== '/' || publicOrigin.search || publicOrigin.hash)) {
-  throw new Error('PUBLIC_APP_URL must be a bare HTTPS origin, for example https://lineup.example.');
-}
+const publicOrigin = isPublicHttpsOrigin(PUBLIC_APP_URL) ? new URL(PUBLIC_APP_URL) : null;
 const OAUTH_REDIRECT_URI = resolveOAuthRedirectUri({ nodeEnv: NODE_ENV,
   configuredRedirectUri: process.env.TWITCH_HOST_REDIRECT_URI?.trim(),
   publicOrigin: publicOrigin?.origin, port: PORT });
@@ -35,6 +34,7 @@ function makeSession(broadcasterId, accessToken, extra = {}) {
   const roleToken = randomBytes(32).toString('base64url');
   const session = createStreamerSession({ broadcasterId, accessToken, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET,
     publicAppUrl: PUBLIC_APP_URL, rolePath: `/role/${roleToken}`, durationMs: ROUND_DURATION_MS, ...extra });
+  session.rolePath = `/role/${roleToken}`;
   sessions.set(broadcasterId, session);
   roleLinks.set(roleToken, session);
   return session;
@@ -176,7 +176,7 @@ const page = `<!doctype html>
 </style></head><body>
 <header><div class="heading"><h1>Lineup</h1><p class="intro">Twitch chat: <strong>!join</strong> in the lobby; active commands: !move 20d, !rotate 45, !color blue. See your line code in chat.</p><p id="round-status" class="intro">Waiting for round status…</p></div><div id="header-account" aria-label="Account controls"></div></header>
 <main class="game"><section class="panel canvas-panel"><div class="canvas-wrap"><canvas id="canvas" aria-label="Shared Lineup drawing canvas"></canvas></div><p class="muted">A is hollow · B is filled · codes identify lines · overlap is allowed</p></section>
-<aside class="sidebar"><section class="panel"><h2>Round and host controls</h2><p id="public-result" class="muted">No round has ended yet.</p><div id="host-access">Checking authorization…</div><p id="host-phase" class="muted">Loading…</p><p id="host-result"></p><p id="host-notice" role="status"></p><div id="host-controls"><button id="host-start" disabled>Start round</button><button id="host-end-round" disabled hidden>End round</button><button id="host-next" disabled hidden>Open next-round lobby</button><button id="host-new-match" disabled title="End this match and clear its participants and lines">End match / New match</button><button id="host-disconnect" disabled hidden>Disconnect Twitch</button><form id="host-guess-form" hidden><label for="host-guess">Guess the target word</label><input id="host-guess" maxlength="80" autocomplete="off"><button type="submit" disabled>Submit guess</button></form><p id="host-roster-note" class="muted">At least two viewers must join with !join before a round can start.</p></div></section>
+<aside class="sidebar"><section class="panel"><h2>Round and host controls</h2><p id="public-result" class="muted">No round has ended yet.</p><div id="host-access">Checking authorization…</div><p id="host-role-link" class="muted" hidden></p><p id="host-phase" class="muted">Loading…</p><p id="host-result"></p><p id="host-notice" role="status"></p><div id="host-controls"><button id="host-start" disabled>Start round</button><button id="host-end-round" disabled hidden>End round</button><button id="host-next" disabled hidden>Open next-round lobby</button><button id="host-new-match" disabled title="End this match and clear its participants and lines">End match / New match</button><button id="host-disconnect" disabled hidden>Disconnect Twitch</button><form id="host-guess-form" hidden><label for="host-guess">Guess the target word</label><input id="host-guess" maxlength="80" autocomplete="off"><button type="submit" disabled>Submit guess</button></form><p id="host-roster-note" class="muted">At least two viewers must join with !join before a round can start.</p></div></section>
 <section class="panel chat"><h2>Twitch chat activity</h2><div class="status"><div id="state">Starting</div><div id="detail"></div></div><div id="messages"><div class="empty">Waiting for chat messages…</div></div></section></aside></main>
 <script>
 const $=selector=>document.querySelector(selector),stateEl=$('#state'),detailEl=$('#detail'),messagesEl=$('#messages'),roundStatus=$('#round-status'),publicResult=$('#public-result'),canvas=$('#canvas'),ctx=canvas.getContext('2d');
@@ -187,6 +187,7 @@ function resizeCanvas(){const rect=canvas.getBoundingClientRect(),dpr=window.dev
 function renderHost(host){
  const authorized=Boolean(host.authenticated);
  hostAccess.innerHTML=host.accessMode==='development'?'<strong>LOCAL DEVELOPMENT ACCESS</strong> · Limited to local development.':host.accessMode==='broadcaster'?'<strong>Broadcaster verified.</strong>':'<a href="/host/login">Sign in with Twitch as the broadcaster</a>';
+ const roleLink=$('#host-role-link');roleLink.hidden=!authorized||!host.roleRevealUrl;roleLink.innerHTML=authorized&&host.roleRevealUrl?'<a href="'+esc(host.roleRevealUrl)+'" target="_blank" rel="noopener">Open role-reveal page</a> · Shared link; roles are available during an active round.':'';
  headerAccount.innerHTML=host.accessMode==='broadcaster'?'<button id="host-logout" type="button">Sign out</button>':'';
  hostStart.disabled=!authorized||hostBusy||!host.canStart;
  hostEndRound.hidden=host.phase!=='active';hostEndRound.disabled=!authorized||hostBusy;
@@ -196,8 +197,8 @@ function renderHost(host){
  hostGuessForm.hidden=host.phase!=='active';hostGuessForm.querySelector('button').disabled=!authorized||hostBusy;
  hostPhase.textContent='Match '+host.matchNumber+' · Round '+host.roundNumber+' · '+host.phase+' · '+host.playerCount+' players'+(host.phase==='active'?' · '+Math.ceil(host.remainingMs/1000)+'s remaining':'');
  hostRosterNote.textContent=host.phase==='lobby'&&!host.canStart?'At least two viewers must join with !join before a round can start.':'Players are locked for this round once it starts.';
- if(host.result?.reason==='broadcaster-ended')hostResult.textContent='Round ended by broadcaster · Answer: '+host.result.answer;
- else hostResult.textContent=host.result?'Winner: '+host.result.winner+' · Answer: '+host.result.answer:'';
+ if(host.result?.reason==='broadcaster-ended')hostResult.textContent='Round ended by broadcaster.';
+ else hostResult.textContent=host.result?'Winner: '+host.result.winner:'';
  const logout=$('#host-logout');if(logout)logout.onclick=()=>hostAction('/api/host/logout');
  hostDisconnect.onclick=()=>{if(confirm('Disconnect this Twitch channel? You will need to sign in again to reconnect it.'))hostAction('/api/host/disconnect')};
 }
@@ -212,8 +213,8 @@ async function refresh(){
   detailEl.textContent=(status.detail||'Twitch chat status unavailable.')+(eventSub.subscription&&eventSub.subscription!=='enabled'?' · Subscription: '+eventSub.subscription:'')+(status.incomingChat?' · Incoming messages: '+status.incomingChat.messagesReceived:'')+(status.roundAnnouncement?' · Round announcement: '+status.roundAnnouncement.status+(status.roundAnnouncement.detail?' — '+status.roundAnnouncement.detail:''):'')+' · Outgoing auth: '+(status.outgoingChat?.authorization||'unknown')+(status.outgoingChat?.detail?' — '+status.outgoingChat.detail:'')+(status.outgoingChat?.lastMessage?' · Last send: '+status.outgoingChat.lastMessage.status+' — '+status.outgoingChat.lastMessage.detail:'');
   if(!gameState.error){
    roundStatus.textContent='Match '+gameState.matchNumber+' · Round '+gameState.roundNumber+' · '+gameState.phase+(gameState.phase==='active'?' · '+Math.ceil(gameState.remainingMs/1000)+' seconds remaining':'')+' · '+gameState.playerCount+' players';
-   if(gameState.result?.reason==='broadcaster-ended')publicResult.textContent='Round ended by broadcaster · Answer: '+gameState.result.answer;
-   else publicResult.textContent=gameState.result?'Winner: '+gameState.result.winner+(gameState.result.reason==='correct-guess'?' · correct guess':' · time expired')+' · Answer: '+gameState.result.answer:'No round has ended yet.';
+   if(gameState.result?.reason==='broadcaster-ended')publicResult.textContent='Round ended by broadcaster.';
+   else publicResult.textContent=gameState.result?'Winner: '+gameState.result.winner+(gameState.result.reason==='correct-guess'?' · correct guess':' · time expired'):'No round has ended yet.';
    drawGame();
   }else{gameState=null;ctx.clearRect(0,0,canvas.width,canvas.height);roundStatus.textContent='Connect a Twitch channel to view its game.'}
   const followingLatest=messagesEl.scrollTop<=16;
@@ -227,8 +228,6 @@ async function hostAction(path,body){if(hostBusy)return;hostBusy=true;hostNotice
 hostStart.onclick=()=>hostAction('/api/host/start');hostEndRound.onclick=()=>hostAction('/api/host/end-round');hostNext.onclick=()=>hostAction('/api/host/next-round');hostNew.onclick=()=>{if(confirm('End this match and clear its participants, lines, and round state?'))hostAction('/api/host/new-match')};hostDisconnect.onclick=()=>{if(confirm('Disconnect this Twitch channel? You will need to sign in again to reconnect it.'))hostAction('/api/host/disconnect')};hostGuessForm.addEventListener('submit',event=>{event.preventDefault();hostAction('/api/host/guess',{guess:hostGuess.value})});
 resizeCanvas();refresh();setInterval(refresh,1000);
 </script></body></html>`;
-
-const rolePage = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lineup — role draw</title><style>:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#111318;color:#eef0f6}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px}.panel{width:min(100%,480px);padding:24px;background:#191c23;border:1px solid #30343e;border-radius:12px}h1{margin:0 0 8px}p{color:#b7bbc6;line-height:1.5}button{font:inherit;padding:11px 16px;color:#fff;background:#8247ff;border:0;border-radius:7px;cursor:pointer}button:disabled{opacity:.5}#result{margin-top:18px;padding:16px;background:#222630;border-radius:8px;font-size:18px;white-space:pre-line}</style></head><body><main class="panel"><h1>Lineup role draw</h1><p>Use this shared link only during an active round. It does not verify who is drawing; anyone with the link can consume the next role slot. Keep it out of the streamer's view.</p><button id="draw">Get My Role</button><div id="result" hidden aria-live="polite"></div><p><a href="/">Return to game</a></p></main><script>const button=document.querySelector('#draw'),result=document.querySelector('#result');button.addEventListener('click',async()=>{button.disabled=true;result.hidden=false;result.textContent='Drawing…';try{const response=await fetch('/api/role/ROLE_TOKEN/draw',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',cache:'no-store'}),data=await response.json();if(!response.ok){result.textContent=data.status==='exhausted'?'All role slots have been drawn.':data.status==='invalid-phase'?'Role draws are available during an active round only.':'Role draw failed.';return}const role=data.role==='builder'?'Builder':'Saboteur';result.textContent='Your role: '+role+'\\nDraw this word: '+data.targetWord}catch{result.textContent='Could not reach the Lineup server.'}finally{button.disabled=false}})</script></body></html>`;
 
 function loginPage(message = '', showRetry = false) {
   const notice = message ? `<p role="alert" style="padding:12px;background:#35242a;border-radius:8px;color:#ffd5dc">${String(message).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])}</p>` : '';
@@ -255,13 +254,9 @@ function parseCookies(request) {
   }));
 }
 
-function isLoopbackRequest(request) {
-  return request.headers.host === redirectUrl.host;
-}
-
 function sameOriginRequest(request) {
-  const origin = request.headers.origin;
-  return isLoopbackRequest(request) && origin === redirectUrl.origin;
+  return isSameOriginApplicationRequest({ nodeEnv: NODE_ENV, requestHost: request.headers.host,
+    requestOrigin: request.headers.origin, developmentOrigin: redirectUrl.origin, publicOrigin: publicOrigin?.origin });
 }
 
 function sendJson(response, status, body, headers = {}) {
@@ -318,14 +313,27 @@ const server = http.createServer(async (request, response) => {
   }
   const rolePageMatch = requestUrl.pathname.match(/^\/role\/([A-Za-z0-9_-]+)$/);
   if (request.method === 'GET' && rolePageMatch && roleLinks.has(rolePageMatch[1])) {
-    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-    return response.end(rolePage.replaceAll('ROLE_TOKEN', rolePageMatch[1]));
+    let browserKey = parseCookies(request).lineup_role_draw;
+    if (!browserKey || !/^[a-f0-9]{64}$/.test(browserKey)) browserKey = randomBytes(32).toString('hex');
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
+      'Set-Cookie': `lineup_role_draw=${browserKey}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${SECURE_COOKIE}` });
+    return response.end(renderRolePage(rolePageMatch[1]));
+  }
+  const roleStatusMatch = requestUrl.pathname.match(/^\/api\/role\/([A-Za-z0-9_-]+)\/status$/);
+  if (request.method === 'GET' && roleStatusMatch && roleLinks.has(roleStatusMatch[1])) {
+    const session = roleLinks.get(roleStatusMatch[1]);
+    return sendJson(response, 200, rolePageStatus(session.getPublicState()));
   }
   const roleDrawMatch = requestUrl.pathname.match(/^\/api\/role\/([A-Za-z0-9_-]+)\/draw$/);
   if (request.method === 'POST' && roleDrawMatch && roleLinks.has(roleDrawMatch[1])) {
     if (!sameOriginRequest(request)) return sendJson(response, 403, { error: 'Role draws must come from the role page.' });
-    const result = roleLinks.get(roleDrawMatch[1]).match.drawRole();
-    return sendJson(response, result.status === 'invalid-phase' ? 409 : result.status === 'exhausted' ? 410 : 200, result);
+    const browserKey = parseCookies(request).lineup_role_draw;
+    if (!browserKey || !/^[a-f0-9]{64}$/.test(browserKey)) return sendJson(response, 400, { error: 'Open the role page first so Lineup can assign this browser its one role draw.' });
+    const result = roleLinks.get(roleDrawMatch[1]).match.drawRole(browserKey);
+    const status = result.status === 'invalid-phase' ? 409 : result.status === 'exhausted' ? 410 : 200;
+    const message = result.status === 'exhausted' ? 'All role slots for this round have been drawn.'
+      : result.status === 'invalid-phase' ? 'Role draws are available only during an active round.' : undefined;
+    return sendJson(response, status, { ...result, ...(message ? { message } : {}) });
   }
   if (request.method === 'GET' && requestUrl.pathname === '/host') {
     response.writeHead(303, { Location: '/host/login', 'Cache-Control': 'no-store' });
@@ -371,7 +379,8 @@ const server = http.createServer(async (request, response) => {
     const verifiedHost = host && host.host.userId === session.broadcasterId ? { userId: host.host.userId } : null;
     const allowDevHost = !host && session.broadcasterId === BROADCASTER_ID;
     const identity = getHostActionIdentity(allowDevHost ? process.env : { NODE_ENV: 'production' }, verifiedHost, session.broadcasterId);
-    return sendJson(response, 200, { ...(identity ? session.getHostState() : session.getPublicState()), authenticated: Boolean(identity), accessMode: identity?.accessMode || null, durationMs: ROUND_DURATION_MS });
+    return sendJson(response, 200, { ...(identity ? session.getHostState() : session.getPublicState()), authenticated: Boolean(identity), accessMode: identity?.accessMode || null, durationMs: ROUND_DURATION_MS,
+      ...(identity ? { roleRevealUrl: buildRoleRevealUrl({ nodeEnv: NODE_ENV, rolePath: session.rolePath, publicOrigin: publicOrigin?.origin, localOrigin: redirectUrl.origin }) } : {}) });
   }
   const hostActions = ['/api/host/start', '/api/host/end-round', '/api/host/new-match', '/api/host/next-round', '/api/host/guess', '/api/host/logout', '/api/host/disconnect'];
   if (request.method === 'POST' && hostActions.includes(requestUrl.pathname)) {
@@ -395,7 +404,15 @@ const server = http.createServer(async (request, response) => {
     let result;
     if (requestUrl.pathname === '/api/host/start') {
       result = session.match.startRound(identity.userId, session.broadcasterId);
-      if (result.status === 'started') result = { ...result, announcement: await session.announceRound(result.roundNumber) };
+      if (result.status === 'started') {
+        const announcement = await session.announceRound(result.roundNumber);
+        result = { ...result, announcement };
+        if (announcement.status === 'sent' || announcement.status === 'already-sent') {
+          console.info(`[Lineup] Role link announcement ${announcement.status} for broadcaster ${session.broadcasterId}, match ${session.match.getPublicState(session.game).matchNumber}, round ${result.roundNumber}.`);
+        } else {
+          console.warn(`[Lineup] Role link announcement ${announcement.status} for broadcaster ${session.broadcasterId}, round ${result.roundNumber}: ${announcement.detail || 'No confirmation from Twitch.'}`);
+        }
+      }
     } else if (requestUrl.pathname === '/api/host/end-round') {
       result = session.match.endRound(identity.userId, session.broadcasterId);
       if (result.status === 'ended') session.addActivity('Round ended by broadcaster.', 'info');
@@ -456,6 +473,8 @@ server.on('error', (error) => {
 server.listen(PORT, NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1', async () => {
   console.log(`Lineup server listening on port ${PORT}.`);
   console.log(`Twitch OAuth callback configured as ${OAUTH_REDIRECT_URI}.`);
+  if (!PUBLIC_APP_URL) console.warn('[Lineup] PUBLIC_APP_URL is unset; round links can be opened locally by the host but cannot be announced to Twitch chat.');
+  else if (!publicOrigin) console.warn('[Lineup] PUBLIC_APP_URL is not a valid public HTTPS origin; role-link announcements are blocked.');
   if (CLIENT_ID && ACCESS_TOKEN && BROADCASTER_ID) {
     try {
       const bootstrapSession = makeSession(BROADCASTER_ID, ACCESS_TOKEN);

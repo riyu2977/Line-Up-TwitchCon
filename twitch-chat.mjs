@@ -64,7 +64,7 @@ export function createTwitchChatSender({ fetchImpl = fetch, clientId, accessToke
       return sendMessage(`${mention}Your line code is ${lineCode}.`, replyParentMessageId);
     },
     announceRound(roleUrl, replyParentMessageId) {
-      return sendMessage(`Lineup: The round has started! Reveal your role and discover the secret word here: ${roleUrl}`, replyParentMessageId);
+      return sendMessage(`Lineup: The round has started! Open this link and click Get My Role to reveal your role and this round's word: ${roleUrl}`, replyParentMessageId);
     },
   };
 }

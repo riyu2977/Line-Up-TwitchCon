@@ -36,6 +36,7 @@ export function createMatchGame({
   let roundNumber = 0;
   let participants = new Map(lines.filter((line) => line.ownerUserId).map((line) => [line.ownerUserId, { displayName: line.label, code: line.code }]));
   let roleAllocation = null;
+  let roleClaims = new Map();
   let targetWord = null;
   let recentWords = [];
   let result = null;
@@ -87,16 +88,22 @@ export function createMatchGame({
 
     roundNumber += 1;
     result = null;
-    roleAllocation = createRoleAllocation(lines.length, random);
+    roleAllocation = createRoleAllocation(participants.size, random);
+    roleClaims = new Map();
     targetWord = chooseWord();
     return { status: 'started', roundNumber };
   }
 
-  function drawRole() {
+  function drawRole(viewerKey = null) {
     if (!lifecycle.canPlay() || !roleAllocation || !targetWord) return { status: 'invalid-phase' };
+    if (viewerKey && roleClaims.has(viewerKey)) {
+      const prior = roleClaims.get(viewerKey);
+      return { status: 'already-assigned', role: prior.role, targetWord, matchNumber, roundNumber };
+    }
     const allocation = roleAllocation.draw();
     if (allocation.status === 'exhausted') return allocation;
-    return { status: 'assigned', role: allocation.role, targetWord };
+    if (viewerKey) roleClaims.set(viewerKey, allocation);
+    return { status: 'assigned', role: allocation.role, targetWord, matchNumber, roundNumber };
   }
 
   function submitGuess(userId, broadcasterId, guess) {
@@ -113,7 +120,7 @@ export function createMatchGame({
     if (!authorized(userId, broadcasterId)) return { status: 'unauthorized' };
     if (!lifecycle.canPlay()) return { status: 'invalid-phase' };
     lifecycle.finish({ reason: 'broadcaster-ended', winner: null });
-    return { status: 'ended', result: result ? { ...result, answer: targetWord } : null };
+    return { status: 'ended', result: result ? { ...result } : null };
   }
 
   function restoreRoster() {
@@ -130,6 +137,7 @@ export function createMatchGame({
     if (reset.status !== 'reset') return reset;
     restoreRoster();
     roleAllocation = null;
+    roleClaims = new Map();
     targetWord = null;
     result = null;
     return { status: 'reset', matchNumber, roundNumber };
@@ -143,6 +151,7 @@ export function createMatchGame({
     roundNumber = 0;
     participants = new Map();
     roleAllocation = null;
+    roleClaims = new Map();
     targetWord = null;
     recentWords = [];
     result = null;
@@ -162,7 +171,7 @@ export function createMatchGame({
     return {
       ...publicState, matchNumber, roundNumber,
       playerCount: participants.size, canStart: lifecycle.getPhase() === 'lobby' && participants.size >= 2,
-      result: result ? { roundNumber: result.roundNumber, winner: result.winner, reason: result.reason, answer: targetWord } : null,
+      result: result ? { roundNumber: result.roundNumber, winner: result.winner, reason: result.reason } : null,
     };
   }
 

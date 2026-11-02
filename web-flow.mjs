@@ -65,3 +65,20 @@ export function canonicalLoopbackRedirect({ nodeEnv, requestHostname, requestHos
       !['localhost', '127.0.0.1'].includes(requestHostname) || requestHost === redirectHost) return null;
   return `http://${redirectHost}${pathname}${search}`;
 }
+
+export function isSameOriginApplicationRequest({ nodeEnv, requestHost, requestOrigin, developmentOrigin, publicOrigin }) {
+  const expectedOrigin = nodeEnv === 'production' ? publicOrigin : developmentOrigin;
+  if (!expectedOrigin || requestOrigin !== expectedOrigin) return false;
+  try { return requestHost === new URL(expectedOrigin).host; }
+  catch { return false; }
+}
+
+export function buildRoleRevealUrl({ nodeEnv, rolePath, publicOrigin, localOrigin }) {
+  const origin = publicOrigin || (nodeEnv === 'production' ? null : localOrigin);
+  if (!origin || typeof rolePath !== 'string' || !rolePath.startsWith('/role/')) return null;
+  try {
+    const parsed = new URL(origin);
+    if (nodeEnv === 'production' && parsed.protocol !== 'https:') return null;
+    return new URL(rolePath, parsed.origin).toString();
+  } catch { return null; }
+}

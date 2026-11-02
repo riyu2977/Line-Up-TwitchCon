@@ -5,7 +5,7 @@ import { applyPlayerCommand, applyRoundChatCommand, parseLineupCommand } from '.
 import { createMessageDeduplicator, createRoundLifecycle, DEFAULT_ROUND_DURATION_MS, makePublicGameState } from './round.mjs';
 import { getHostAccessMode, getHostActionIdentity, invalidateHostSession } from './host-auth.mjs';
 import { createTwitchChatSender } from './twitch-chat.mjs';
-import { createRoundAnnouncer } from './chat-announcements.mjs';
+import { createRoundAnnouncer, isPublicHttpsOrigin } from './chat-announcements.mjs';
 import { assessBroadcasterChatToken } from './twitch-auth.mjs';
 
 function line(id, ownerUserId, a, b) {
@@ -268,30 +268,41 @@ test('validated Twitch token must match the client and broadcaster; write scope 
   assert.equal(assessBroadcasterChatToken({ ...token, scopes: [] }, base).status, 'missing-read-scope');
 });
 
-test('round announcement uses the configured HTTPS role URL exactly once and never substitutes localhost', async () => {
+test('public origin validation rejects local/private origins and accepts a public HTTPS origin', () => {
+  assert.equal(isPublicHttpsOrigin('https://lineup-demo.com'), true);
+  for (const url of [
+    'http://lineup-demo.com', 'https://localhost:3000', 'https://127.0.0.1:3000',
+    'https://10.0.0.4', 'https://192.168.1.8', 'https://172.20.0.1',
+    'https://169.254.2.3', 'https://[::1]', 'https://[fd00::1]', 'https://lineup.local',
+  ]) assert.equal(isPublicHttpsOrigin(url), false, url);
+});
+
+test('round announcement uses the configured public HTTPS role URL exactly once and never substitutes localhost', async () => {
   const posted = [];
   const sender = { announceRound: async (url) => { posted.push(url); return { status: 'sent', detail: 'Twitch confirmed the message was sent.' }; } };
-  const announcer = createRoundAnnouncer({ sender, publicAppUrl: 'https://lineup.example', rolePath: '/role/secret-session-link' });
+  const announcer = createRoundAnnouncer({ sender, publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/secret-session-link' });
   assert.deepEqual(await announcer.announce(1, 1), { status: 'sent', detail: 'Twitch confirmed the message was sent.' });
   assert.deepEqual(await announcer.announce(1, 1), { status: 'already-sent', detail: 'Twitch already confirmed this round announcement.' });
-  assert.deepEqual(posted, ['https://lineup.example/role/secret-session-link']);
+  assert.deepEqual(posted, ['https://lineup-demo.com/role/secret-session-link']);
 
   const missingUrl = createRoundAnnouncer({ sender, rolePath: '/role/secret-session-link' });
   assert.equal((await missingUrl.announce(1, 2)).status, 'missing-public-url');
   assert.equal(posted.some((url) => /localhost|127\.0\.0\.1/.test(url)), false);
   const insecureUrl = createRoundAnnouncer({ sender, publicAppUrl: 'http://localhost:3000', rolePath: '/role/x' });
-  assert.equal((await insecureUrl.announce(1, 3)).status, 'missing-public-url');
+  assert.equal((await insecureUrl.announce(1, 3)).status, 'invalid-public-url');
   const httpsLocalhost = createRoundAnnouncer({ sender, publicAppUrl: 'https://localhost:3000', rolePath: '/role/x' });
-  assert.equal((await httpsLocalhost.announce(1, 4)).status, 'missing-public-url');
+  assert.equal((await httpsLocalhost.announce(1, 4)).status, 'invalid-public-url');
   const httpsLoopback = createRoundAnnouncer({ sender, publicAppUrl: 'https://127.0.0.1:3000', rolePath: '/role/x' });
-  assert.equal((await httpsLoopback.announce(1, 5)).status, 'missing-public-url');
+  assert.equal((await httpsLoopback.announce(1, 5)).status, 'invalid-public-url');
+  const privateAddress = createRoundAnnouncer({ sender, publicAppUrl: 'https://10.1.2.3', rolePath: '/role/x' });
+  assert.equal((await privateAddress.announce(1, 6)).status, 'invalid-public-url');
 });
 
 test('failed role announcements are not marked sent and duplicate delivery attempts are suppressed', async () => {
   let attempts = 0;
   const announcer = createRoundAnnouncer({
     sender: { announceRound: async () => { attempts += 1; return { status: 'network-error', detail: 'Could not reach Twitch.' }; } },
-    publicAppUrl: 'https://lineup.example', rolePath: '/role/session',
+    publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/session',
   });
   assert.equal((await announcer.announce(1, 1)).status, 'network-error');
   assert.equal((await announcer.announce(1, 1)).status, 'network-error');
