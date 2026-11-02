@@ -12,13 +12,20 @@ test('role page is responsive, accessible, and reveals data only after a draw re
   assert.match(html, /@media\(max-width:520px\)/);
   assert.match(html, /prefers-reduced-motion/);
   assert.match(html, /fetch\('\/api\/role\/safe_token-123\/draw'/);
+  assert.match(html, /Get My Role/);
+  assert.match(html, /Each click draws one role from the shared pool/);
   assert.match(html, /Draw Another Role/);
-  assert.match(html, /Each click consumes one role from the shared pool/);
-  assert.match(html, /poolExhausted=true/);
-  assert.doesNotMatch(html, /One role draw is available per browser/);
+  assert.match(html, /This click consumed one role from the shared pool/);
+  assert.match(html, /poolExhausted/);
   assert.doesNotMatch(html.split('<script>')[0], /targetWord|Saboteur|Builder/);
   assert.match(html, /does not verify Twitch identity/);
   assert.throws(() => renderRolePage('<script>'), /Invalid role link token/);
+});
+
+test('embedded role-page script parses as JavaScript', () => {
+  const script = renderRolePage('safe_token-123').match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+  assert.doesNotThrow(() => new Function(script));
 });
 
 test('role page status exposes only the phase and round identity for stale-view refresh', () => {

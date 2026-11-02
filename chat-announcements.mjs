@@ -42,7 +42,7 @@ export function isPublicHttpsOrigin(value) {
   } catch { return false; }
 }
 
-export function createRoundAnnouncer({ sender, publicAppUrl, rolePath }) {
+export function createRoundAnnouncer({ sender, publicAppUrl, rolePath, disabledReason = null }) {
   const announcements = new Map();
   let baseUrl = null;
   if (isPublicHttpsOrigin(publicAppUrl)) baseUrl = new URL(publicAppUrl).origin;
@@ -56,6 +56,7 @@ export function createRoundAnnouncer({ sender, publicAppUrl, rolePath }) {
           ? { status: 'already-sent', detail: 'Twitch already confirmed this round announcement.' }
           : prior;
       }
+      if (disabledReason) return { status: 'local-session', detail: disabledReason };
       if (!baseUrl) return publicAppUrl
         ? { status: 'invalid-public-url', detail: 'PUBLIC_APP_URL must be a public HTTPS origin, not localhost, a private address, or an internal hostname.' }
         : { status: 'missing-public-url', detail: 'Set PUBLIC_APP_URL to the deployed public HTTPS origin before sending a round link.' };

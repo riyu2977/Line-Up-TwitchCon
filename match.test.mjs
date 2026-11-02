@@ -61,39 +61,51 @@ test('shared role draw requires an active round and has no player identity mappi
   assert.equal(game.drawRole().status, 'exhausted');
 });
 
-test('every click from the same browser consumes a fresh role slot until the pool is exhausted', () => {
+test('every role-button draw consumes one shared slot, including repeated draws from the same browser', () => {
   const lines = []; const game = makeGame(lines); addPlayers(lines, Array.from({ length: 10 }, (_, index) => `viewer-${index}`));
   game.startRound('broadcaster', 'broadcaster');
-  const clicks = Array.from({ length: 10 }, () => game.drawRole('same-browser-cookie'));
-  assert.ok(clicks.every((draw) => draw.status === 'assigned'));
-  assert.equal(clicks.filter((draw) => draw.role === 'builder').length, 7);
-  assert.equal(clicks.filter((draw) => draw.role === 'saboteur').length, 3);
-  assert.ok(clicks.every((draw) => draw.targetWord === clicks[0].targetWord));
-  assert.equal(game.drawRole('same-browser-cookie').status, 'exhausted');
+  const assignments = Array.from({ length: 10 }, () => game.drawRole());
+  assert.ok(assignments.every((draw) => draw.status === 'assigned'));
+  assert.equal(assignments.filter((draw) => draw.role === 'builder').length, 7);
+  assert.equal(assignments.filter((draw) => draw.role === 'saboteur').length, 3);
+  assert.ok(assignments.every((draw) => draw.targetWord === assignments[0].targetWord));
+  assert.equal(game.drawRole().status, 'exhausted');
 });
 
-test('simultaneous draws from one browser consume distinct slots and cannot over-allocate', async () => {
+test('simultaneous role draws consume each finite pool slot once and cannot over-allocate', async () => {
   const lines = []; const game = makeGame(lines);
   addPlayers(lines, Array.from({ length: 10 }, (_, index) => `viewer-${index}`));
   game.startRound('broadcaster', 'broadcaster');
-  const results = await Promise.all(Array.from({ length: 11 }, (_, index) =>
-    Promise.resolve().then(() => game.drawRole(index < 10 ? 'same-browser' : 'another-browser'))));
+  const results = await Promise.all(Array.from({ length: 11 }, () =>
+    Promise.resolve().then(() => game.drawRole())));
   assert.equal(results.filter((result) => result.status === 'assigned').length, 10);
   assert.equal(results.filter((result) => result.status === 'exhausted').length, 1);
   assert.equal(results.filter((result) => result.role === 'builder').length, 7);
   assert.equal(results.filter((result) => result.role === 'saboteur').length, 3);
 });
 
+test('repeated clicks by one browser can draw successive roles from the same pool', () => {
+  const lines = []; const game = makeGame(lines); addPlayers(lines, ['viewer-a', 'viewer-b', 'viewer-c']);
+  game.startRound('broadcaster', 'broadcaster');
+  const first = game.drawRole();
+  const second = game.drawRole();
+  assert.equal(first.status, 'assigned');
+  assert.equal(second.status, 'assigned');
+  assert.equal(first.targetWord, second.targetWord);
+  assert.equal(game.drawRole().status, 'assigned');
+  assert.equal(game.drawRole().status, 'exhausted');
+});
+
 test('role slots are discarded when the round ends and regenerated for the next round', () => {
   const lines = []; const game = makeGame(lines); addPlayers(lines);
   game.startRound('broadcaster', 'broadcaster');
-  assert.equal(game.drawRole('persistent-browser').status, 'assigned');
+  assert.equal(game.drawRole().status, 'assigned');
   const target = game.drawRole().targetWord;
   assert.equal(game.submitGuess('broadcaster', 'broadcaster', target).status, 'correct');
   assert.equal(game.drawRole().status, 'invalid-phase');
   game.nextRound('broadcaster', 'broadcaster');
   assert.equal(game.startRound('broadcaster', 'broadcaster').status, 'started');
-  assert.equal(game.drawRole('persistent-browser').status, 'assigned');
+  assert.equal(game.drawRole().status, 'assigned');
 });
 
 test('guess normalization and round resolution work without exposing the answer during active play', () => {

@@ -39,6 +39,7 @@ test('same-origin mutations validate loopback locally and configured HTTPS origi
 
 test('role links use local origin only for local testing and require public HTTPS in production', () => {
   assert.equal(buildRoleRevealUrl({ nodeEnv: 'development', rolePath: '/role/abc', localOrigin: 'http://localhost:3000' }), 'http://localhost:3000/role/abc');
+  assert.equal(buildRoleRevealUrl({ nodeEnv: 'development', rolePath: '/role/abc', publicOrigin: 'https://line-up-twitch-game.onrender.com', localOrigin: 'http://localhost:3000' }), 'http://localhost:3000/role/abc');
   assert.equal(buildRoleRevealUrl({ nodeEnv: 'production', rolePath: '/role/abc', publicOrigin: 'https://lineup.example' }), 'https://lineup.example/role/abc');
   assert.equal(buildRoleRevealUrl({ nodeEnv: 'production', rolePath: '/role/abc', localOrigin: 'http://localhost:3000' }), null);
   assert.equal(buildRoleRevealUrl({ nodeEnv: 'production', rolePath: '/role/abc', publicOrigin: 'http://localhost:3000' }), null);
@@ -46,12 +47,14 @@ test('role links use local origin only for local testing and require public HTTP
 
 test('development OAuth cannot be redirected to a third-party callback', () => {
   assert.equal(resolveOAuthRedirectUri({ nodeEnv: 'development', port: 3000 }), 'http://localhost:3000/host/callback');
+  assert.equal(resolveOAuthRedirectUri({ nodeEnv: 'development', port: 3000, publicOrigin: 'https://line-up-twitch-game.onrender.com', configuredRedirectUri: 'http://localhost:3000/host/callback' }), 'http://localhost:3000/host/callback');
   assert.equal(resolveOAuthRedirectUri({ nodeEnv: 'development', port: 3000, configuredRedirectUri: 'http://127.0.0.1:3000/host/callback' }), 'http://127.0.0.1:3000/host/callback');
   assert.throws(() => resolveOAuthRedirectUri({ nodeEnv: 'development', port: 3000, configuredRedirectUri: 'https://external-auth.example/oauth/callback' }), /Local Twitch OAuth must use/);
 });
 
 test('production OAuth callback must belong to the configured public Lineup origin', () => {
   assert.equal(resolveOAuthRedirectUri({ nodeEnv: 'production', port: 3000, publicOrigin: 'https://lineup.example' }), 'https://lineup.example/host/callback');
+  assert.throws(() => resolveOAuthRedirectUri({ nodeEnv: 'production', port: 3000, publicOrigin: 'https://lineup.example', configuredRedirectUri: 'http://localhost:3000/host/callback' }), /PUBLIC_APP_URL/);
   assert.throws(() => resolveOAuthRedirectUri({ nodeEnv: 'production', port: 3000, publicOrigin: 'https://lineup.example', configuredRedirectUri: 'https://external-auth.example/oauth/callback' }), /PUBLIC_APP_URL/);
 });
 

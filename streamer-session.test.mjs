@@ -132,6 +132,7 @@ test('round start announcement uses the current round link once and records send
     },
   });
   s.validateTokenMetadata({ client_id: 'client', user_id: s.broadcasterId, scopes: ['user:read:chat', 'user:write:chat'] });
+  s.setEventSubState('connected', 'enabled');
   s.match.joinPlayer('viewer-one'); s.match.joinPlayer('viewer-two');
   const startAndAnnounce = async () => {
     const started = s.match.startRound(s.broadcasterId, s.broadcasterId);
@@ -183,6 +184,7 @@ test('announcement blockers and Twitch send failures remain explicit and are nev
     fetchImpl: async () => ({ ok: false, status: 503 }),
   });
   failed.validateTokenMetadata({ client_id: 'client', user_id: failed.broadcasterId, scopes: ['user:read:chat', 'user:write:chat'] });
+  failed.setEventSubState('connected', 'enabled');
   failed.match.joinPlayer('one'); failed.match.joinPlayer('two');
   const failedRound = failed.match.startRound(failed.broadcasterId, failed.broadcasterId);
   const send = await failed.announceRound(failedRound.roundNumber);
@@ -190,6 +192,42 @@ test('announcement blockers and Twitch send failures remain explicit and are nev
   assert.notEqual(send.status, 'sent');
   assert.equal(failed.getState().roundAnnouncement.status, 'twitch-error');
   failed.stop();
+});
+
+test('a disconnected Twitch chat reports announcement failure without attempting a send', async () => {
+  let attempts = 0;
+  const s = createStreamerSession({
+    broadcasterId: 'broadcaster-chat-offline', accessToken: 'token', clientId: 'client',
+    publicAppUrl: 'https://lineup-demo.com', rolePath: '/role/offline',
+    fetchImpl: async () => { attempts += 1; return { ok: true, json: async () => ({ data: [{ is_sent: true }] }) }; },
+  });
+  s.validateTokenMetadata({ client_id: 'client', user_id: s.broadcasterId, scopes: ['user:read:chat', 'user:write:chat'] });
+  s.match.joinPlayer('one'); s.match.joinPlayer('two');
+  const round = s.match.startRound(s.broadcasterId, s.broadcasterId);
+  const result = await s.announceRound(round.roundNumber);
+  assert.equal(result.status, 'chat-disconnected');
+  assert.equal(attempts, 0);
+  assert.equal(s.getState().roundAnnouncement.status, 'chat-disconnected');
+  s.stop();
+});
+
+test('local game sessions never announce their process-local role link at the configured production origin', async () => {
+  let attempts = 0;
+  const s = createStreamerSession({
+    broadcasterId: 'broadcaster-local', accessToken: 'token', clientId: 'client',
+    publicAppUrl: 'https://line-up-twitch-game.onrender.com', rolePath: '/role/local-only',
+    announcementDisabledReason: 'Local game state is not hosted on the public deployment.',
+    fetchImpl: async () => { attempts += 1; return { ok: true, json: async () => ({ data: [{ is_sent: true }] }) }; },
+  });
+  s.validateTokenMetadata({ client_id: 'client', user_id: s.broadcasterId, scopes: ['user:read:chat', 'user:write:chat'] });
+  s.setEventSubState('connected', 'enabled');
+  s.match.joinPlayer('one'); s.match.joinPlayer('two');
+  const round = s.match.startRound(s.broadcasterId, s.broadcasterId);
+  const result = await s.announceRound(round.roundNumber);
+  assert.equal(result.status, 'local-session');
+  assert.match(result.detail, /Local game state/);
+  assert.equal(attempts, 0);
+  s.stop();
 });
 
 test('only a validated enabled EventSub chat subscription is reported connected', async () => {

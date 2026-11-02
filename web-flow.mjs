@@ -47,7 +47,7 @@ export function resolveOAuthRedirectUri({ nodeEnv, configuredRedirectUri, public
     ? `${publicOrigin}/host/callback`
     : `http://localhost:${port}/host/callback`);
   const redirect = new URL(redirectUri);
-  const loopback = redirect.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(redirect.hostname) &&
+  const loopback = nodeEnv !== 'production' && redirect.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(redirect.hostname) &&
     redirect.host === `${redirect.hostname}:${port}`;
   const publicCallback = nodeEnv === 'production' && Boolean(publicOrigin) &&
     redirect.origin === publicOrigin && redirect.protocol === 'https:';
@@ -74,7 +74,7 @@ export function isSameOriginApplicationRequest({ nodeEnv, requestHost, requestOr
 }
 
 export function buildRoleRevealUrl({ nodeEnv, rolePath, publicOrigin, localOrigin }) {
-  const origin = publicOrigin || (nodeEnv === 'production' ? null : localOrigin);
+  const origin = nodeEnv === 'production' ? publicOrigin : localOrigin;
   if (!origin || typeof rolePath !== 'string' || !rolePath.startsWith('/role/')) return null;
   try {
     const parsed = new URL(origin);

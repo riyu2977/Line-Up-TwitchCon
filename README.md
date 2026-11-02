@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Lineup
 
 Lineup is a Twitch chat drawing and social deduction game. Viewers join during
@@ -74,13 +73,12 @@ When both `PUBLIC_APP_URL` and `user:write:chat` are configured, starting a
 round posts the direct shared role page URL to Twitch chat. The link has a
 random token and opens the **Role Assignment** page. Its purple, responsive
 LEGO-inspired frame presents **Get My Role** before showing the allocated role
-and current round word. The server assigns from the pre-shuffled 70:30 pool,
-including exactly 7 Builders and 3 Saboteurs for 10 players. An HttpOnly
-anonymous browser cookie prevents that browser from consuming another slot in
-the same round; refreshing returns that browser's original assignment. This
-does not verify Twitch identity: someone with the shared link can use another
-browser or clear browser data to draw again. The app never claims that the
-shared link is identity-verified private delivery.
+and current round word. Each click consumes one slot from the server's
+pre-shuffled 70:30 pool, including exactly 7 Builders and 3 Saboteurs for 10
+players; the pool size is the number of participants in the match. The button
+can be clicked again to draw another role until the pool is empty. The shared
+link does not verify Twitch identity, and Lineup does not claim that a role
+draw is identity-verified private delivery.
 `PUBLIC_APP_URL` must be the externally reachable HTTPS origin viewers use;
 Lineup rejects localhost and loopback URLs. For production, set both
 `PUBLIC_APP_URL=https://<your-deployed-host>` and
@@ -117,22 +115,25 @@ word; the host active-round state also omits the word. The app redacts target
 word occurrences from its own public chat activity while the round is active.
 Twitch chat itself remains public.
 
-## Deployment status and limitations
+## Production configuration and limitations
 
-The code can run behind an HTTPS-terminating reverse proxy by setting
-`NODE_ENV=production`, `PUBLIC_APP_URL`, `TWITCH_HOST_REDIRECT_URI`, and the
-provider's `PORT`. No domain or hosting provider is configured here, so no
-production deployment has been performed.
+The supplied Render origin is `https://line-up-twitch-game.onrender.com`.
+Configure `PUBLIC_APP_URL` to that HTTPS origin and
+`TWITCH_HOST_REDIRECT_URI` to its `/host/callback` path in the deployment
+provider and Twitch Developer Console. The local `.env` uses those variable
+names and was checked against the supplied origin; its values are never
+committed. This repository change does not deploy automatically.
+
+The code runs behind an HTTPS-terminating reverse proxy with
+`NODE_ENV=production` and the provider's `PORT`.
 
 Multiple broadcaster sessions can coexist in one process. Each session owns its game, match, timer, EventSub socket, chat history, deduplicator, role link, and outgoing sender. Commands are rejected if the EventSub message broadcaster ID does not match the receiving session. Public APIs select a channel using `?channel=<broadcaster-id>`; authenticated host actions use the cookie-bound broadcaster session. The configured legacy token can still bootstrap one channel.
 
-Connections, OAuth access tokens, host sessions, and game state are held in memory. Encrypted durable credential storage, process restart recovery, and public deployment have not been implemented. Restarting loses games and requires broadcasters to connect again. A broadcaster can disconnect their own channel from the host page without affecting other sessions.
+Connections, OAuth access tokens, host sessions, and game state are held in memory. Encrypted durable credential storage and process restart recovery are not implemented. Restarting loses games and requires broadcasters to connect again. A broadcaster can disconnect their own channel from the host page without affecting other sessions. These source changes need to be deployed before they appear on the public Render site.
 
 Automated tests cover game geometry, line ownership, lifecycle, role allocation,
-guessing, secret isolation, chat reply payloads, direct HTTPS announcement
-URLs, duplicate announcement suppression, and missing public URL behavior.
-They do not verify a live Twitch send, EventSub session, OAuth callback, two simultaneously authorized broadcasters, or production deployment.
-=======
-# chat-to-decision-TwitchCon
-An AI-powered Twitch tool that turns live chat discussions into evidence-backed polls, allowing streamers to review, edit, and approve polls before their communities vote.
->>>>>>> origin/main
+browser claim persistence, secret isolation, the role and dashboard pages,
+chat reply payloads, direct HTTPS announcement URLs, duplicate announcement
+suppression, disconnected chat, and missing public URL behavior. They do not
+verify a live Twitch send, EventSub session, OAuth callback, two simultaneously
+authorized broadcasters, or rendered production appearance.

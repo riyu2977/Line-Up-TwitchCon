@@ -1,10 +1,8 @@
-<<<<<<< HEAD
 .env
 .env.*
 !.env.example
 node_modules/
 npm-debug.log*
-=======
 # Logs
 logs
 *.log
@@ -154,4 +152,3 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
->>>>>>> origin/main

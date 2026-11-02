@@ -10,7 +10,7 @@ const MAX_MESSAGES = 100;
 
 /** A server-owned, broadcaster-isolated Lineup session. Secrets never appear in its public views. */
 export function createStreamerSession({
-  broadcasterId, accessToken, refreshToken = null, clientId, clientSecret = null, publicAppUrl, rolePath,
+  broadcasterId, accessToken, refreshToken = null, clientId, clientSecret = null, publicAppUrl, rolePath, announcementDisabledReason = null,
   durationMs = DEFAULT_ROUND_DURATION_MS, fetchImpl = fetch,
   random, setTimer, clearTimer, now,
 }) {
@@ -38,7 +38,15 @@ export function createStreamerSession({
     enabled: () => chatWriteEnabled,
     authorizationStatus: () => outgoingChat.authorization,
   });
-  const announcer = createRoundAnnouncer({ sender, publicAppUrl, rolePath });
+  const announcementSender = {
+    announceRound(roleUrl) {
+      if (state.eventSubConnection !== 'connected' || state.eventSubSubscription !== 'enabled') {
+        return { status: 'chat-disconnected', detail: 'The broadcaster Twitch chat connection is not active; the role link was not sent.' };
+      }
+      return sender.announceRound(roleUrl);
+    },
+  };
+  const announcer = createRoundAnnouncer({ sender: announcementSender, publicAppUrl, rolePath, disabledReason: announcementDisabledReason });
 
   function setStatus(status, detail) { state.status = status; state.detail = detail; }
   function setEventSubState(connection, subscription, keepaliveTimeoutMs = state.keepaliveTimeoutMs) {
