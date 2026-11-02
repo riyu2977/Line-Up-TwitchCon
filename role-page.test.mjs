@@ -12,6 +12,10 @@ test('role page is responsive, accessible, and reveals data only after a draw re
   assert.match(html, /@media\(max-width:520px\)/);
   assert.match(html, /prefers-reduced-motion/);
   assert.match(html, /fetch\('\/api\/role\/safe_token-123\/draw'/);
+  assert.match(html, /Draw Another Role/);
+  assert.match(html, /Each click consumes one role from the shared pool/);
+  assert.match(html, /poolExhausted=true/);
+  assert.doesNotMatch(html, /One role draw is available per browser/);
   assert.doesNotMatch(html.split('<script>')[0], /targetWord|Saboteur|Builder/);
   assert.match(html, /does not verify Twitch identity/);
   assert.throws(() => renderRolePage('<script>'), /Invalid role link token/);

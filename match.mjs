@@ -36,7 +36,6 @@ export function createMatchGame({
   let roundNumber = 0;
   let participants = new Map(lines.filter((line) => line.ownerUserId).map((line) => [line.ownerUserId, { displayName: line.label, code: line.code }]));
   let roleAllocation = null;
-  let roleClaims = new Map();
   let targetWord = null;
   let recentWords = [];
   let result = null;
@@ -89,20 +88,14 @@ export function createMatchGame({
     roundNumber += 1;
     result = null;
     roleAllocation = createRoleAllocation(participants.size, random);
-    roleClaims = new Map();
     targetWord = chooseWord();
     return { status: 'started', roundNumber };
   }
 
-  function drawRole(viewerKey = null) {
+  function drawRole() {
     if (!lifecycle.canPlay() || !roleAllocation || !targetWord) return { status: 'invalid-phase' };
-    if (viewerKey && roleClaims.has(viewerKey)) {
-      const prior = roleClaims.get(viewerKey);
-      return { status: 'already-assigned', role: prior.role, targetWord, matchNumber, roundNumber };
-    }
     const allocation = roleAllocation.draw();
     if (allocation.status === 'exhausted') return allocation;
-    if (viewerKey) roleClaims.set(viewerKey, allocation);
     return { status: 'assigned', role: allocation.role, targetWord, matchNumber, roundNumber };
   }
 
@@ -137,7 +130,6 @@ export function createMatchGame({
     if (reset.status !== 'reset') return reset;
     restoreRoster();
     roleAllocation = null;
-    roleClaims = new Map();
     targetWord = null;
     result = null;
     return { status: 'reset', matchNumber, roundNumber };
@@ -151,7 +143,6 @@ export function createMatchGame({
     roundNumber = 0;
     participants = new Map();
     roleAllocation = null;
-    roleClaims = new Map();
     targetWord = null;
     recentWords = [];
     result = null;

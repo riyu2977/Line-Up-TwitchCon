@@ -26,8 +26,8 @@ function makeGame(lines = [], overrides = {}) {
   return createMatchGame({ lines, words: ['apple', 'bridge'], durationMs: 1000, ...fakeClock(), random: () => 0, ...overrides });
 }
 
-test('fixed anonymous role pool contains a shuffled 70/30 allocation and consumes one slot per draw', () => {
-  for (const [count, expectedSaboteurs] of [[1, 0], [2, 1], [3, 1], [5, 2], [10, 3]]) {
+test('role pool scales to any participant count and consumes one slot per draw', () => {
+  for (const [count, expectedSaboteurs] of [[1, 0], [2, 1], [3, 1], [5, 2], [10, 3], [17, 5], [50, 15]]) {
     const pool = createRoleAllocation(count, () => 0.25);
     const roles = Array.from({ length: count }, () => pool.draw().role);
     assert.equal(roles.filter((role) => role === 'saboteur').length, expectedSaboteurs);
@@ -61,28 +61,23 @@ test('shared role draw requires an active round and has no player identity mappi
   assert.equal(game.drawRole().status, 'exhausted');
 });
 
-test('a browser can consume only one role slot per round and sees its same assignment again', () => {
-  const lines = []; const game = makeGame(lines); addPlayers(lines, ['a', 'b', 'c']);
+test('every click from the same browser consumes a fresh role slot until the pool is exhausted', () => {
+  const lines = []; const game = makeGame(lines); addPlayers(lines, Array.from({ length: 10 }, (_, index) => `viewer-${index}`));
   game.startRound('broadcaster', 'broadcaster');
-  const first = game.drawRole('browser-cookie-a');
-  const repeat = game.drawRole('browser-cookie-a');
-  const secondBrowser = game.drawRole('browser-cookie-b');
-  assert.equal(first.status, 'assigned');
-  assert.equal(repeat.status, 'already-assigned');
-  assert.equal(repeat.role, first.role);
-  assert.equal(repeat.targetWord, first.targetWord);
-  assert.equal(secondBrowser.status, 'assigned');
-  assert.notEqual(secondBrowser.role, first.role);
-  assert.equal(game.drawRole().status, 'assigned');
-  assert.equal(game.drawRole().status, 'exhausted');
+  const clicks = Array.from({ length: 10 }, () => game.drawRole('same-browser-cookie'));
+  assert.ok(clicks.every((draw) => draw.status === 'assigned'));
+  assert.equal(clicks.filter((draw) => draw.role === 'builder').length, 7);
+  assert.equal(clicks.filter((draw) => draw.role === 'saboteur').length, 3);
+  assert.ok(clicks.every((draw) => draw.targetWord === clicks[0].targetWord));
+  assert.equal(game.drawRole('same-browser-cookie').status, 'exhausted');
 });
 
-test('simultaneous browser draws consume distinct available slots and cannot over-allocate', async () => {
+test('simultaneous draws from one browser consume distinct slots and cannot over-allocate', async () => {
   const lines = []; const game = makeGame(lines);
   addPlayers(lines, Array.from({ length: 10 }, (_, index) => `viewer-${index}`));
   game.startRound('broadcaster', 'broadcaster');
   const results = await Promise.all(Array.from({ length: 11 }, (_, index) =>
-    Promise.resolve().then(() => game.drawRole(`browser-${index}`))));
+    Promise.resolve().then(() => game.drawRole(index < 10 ? 'same-browser' : 'another-browser'))));
   assert.equal(results.filter((result) => result.status === 'assigned').length, 10);
   assert.equal(results.filter((result) => result.status === 'exhausted').length, 1);
   assert.equal(results.filter((result) => result.role === 'builder').length, 7);

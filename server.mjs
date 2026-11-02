@@ -313,10 +313,7 @@ const server = http.createServer(async (request, response) => {
   }
   const rolePageMatch = requestUrl.pathname.match(/^\/role\/([A-Za-z0-9_-]+)$/);
   if (request.method === 'GET' && rolePageMatch && roleLinks.has(rolePageMatch[1])) {
-    let browserKey = parseCookies(request).lineup_role_draw;
-    if (!browserKey || !/^[a-f0-9]{64}$/.test(browserKey)) browserKey = randomBytes(32).toString('hex');
-    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
-      'Set-Cookie': `lineup_role_draw=${browserKey}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${SECURE_COOKIE}` });
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return response.end(renderRolePage(rolePageMatch[1]));
   }
   const roleStatusMatch = requestUrl.pathname.match(/^\/api\/role\/([A-Za-z0-9_-]+)\/status$/);
@@ -327,9 +324,7 @@ const server = http.createServer(async (request, response) => {
   const roleDrawMatch = requestUrl.pathname.match(/^\/api\/role\/([A-Za-z0-9_-]+)\/draw$/);
   if (request.method === 'POST' && roleDrawMatch && roleLinks.has(roleDrawMatch[1])) {
     if (!sameOriginRequest(request)) return sendJson(response, 403, { error: 'Role draws must come from the role page.' });
-    const browserKey = parseCookies(request).lineup_role_draw;
-    if (!browserKey || !/^[a-f0-9]{64}$/.test(browserKey)) return sendJson(response, 400, { error: 'Open the role page first so Lineup can assign this browser its one role draw.' });
-    const result = roleLinks.get(roleDrawMatch[1]).match.drawRole(browserKey);
+    const result = roleLinks.get(roleDrawMatch[1]).match.drawRole();
     const status = result.status === 'invalid-phase' ? 409 : result.status === 'exhausted' ? 410 : 200;
     const message = result.status === 'exhausted' ? 'All role slots for this round have been drawn.'
       : result.status === 'invalid-phase' ? 'Role draws are available only during an active round.' : undefined;
