@@ -5,6 +5,7 @@ export function createTwitchAuthorizationUrl({ clientId, redirectUri, state }) {
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'user:read:chat user:write:chat',
+    force_verify: 'true',
     state,
   }).toString();
   return authorize;

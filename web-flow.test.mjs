@@ -14,6 +14,7 @@ test('Lineup OAuth always targets Twitch authorization with its configured callb
   assert.equal(url.searchParams.get('redirect_uri'), 'http://localhost:3000/host/callback');
   assert.equal(url.searchParams.get('response_type'), 'code');
   assert.equal(url.searchParams.get('scope'), 'user:read:chat user:write:chat');
+  assert.equal(url.searchParams.get('force_verify'), 'true');
   assert.equal(url.searchParams.get('state'), 'state-value');
 });
 
